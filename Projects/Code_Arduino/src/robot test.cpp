@@ -1,8 +1,10 @@
-/*Mini Task of Huge Project*/
+/*Khai báo thư viện RTOS*/
 #include <Arduino.h>
 #include <Arduino_FreeRTOS.h>
 #include "task.h"
 #include "queue.h"
+#define ULONG_MAX 0xFFFFFFFF
+
 /*Thư viện MPU6050*/
 #include <MPU6050_tockn.h>
 #include <Wire.h>
@@ -17,8 +19,7 @@ float Kp = 1;
 #include <SoftwareSerial.h>
 SoftwareSerial mySerial (6,7);
 
-#define ULONG_MAX 0xFFFFFFFF
-
+/*Khai báo chân điều khiển L298 với ENA và ENB để băm xung*/
 #define ENA 11
 #define IN1 12
 #define IN2 13
@@ -26,6 +27,7 @@ SoftwareSerial mySerial (6,7);
 #define IN4 8
 #define ENB 9
 
+/*Gồm 3 Task: check Zone, Điều khiển xe và chạy thẳng dùng MPU*/
 void TaskZone(void *pvParameters);
 void TaskDrive(void *pvParameters);
 void TaskMPU(void *pvParameters);
@@ -35,10 +37,12 @@ static TaskHandle_t TaskDriveHandle = NULL;
 static TaskHandle_t TaskMPUHandle = NULL;
 QueueHandle_t  Queue,Queue1;
 
+/*Sử dụng Queue để chứa giá trị đếm Zone*/
 int count =0;
 int read_count = 0;
+/*Giá trị analog của cảm biến hồng ngoại*/
+int sensorValue = 0;
 
-static int sensorValue = 0;
 void _start()
 {
   // Cho phép xe chạy
@@ -93,8 +97,11 @@ void turnLeft(){
   digitalWrite(IN4,HIGH);
 }
 
-void setSpeed(int motorspeed2){
+void setSpeed(int motorspeed2)
+{
+  /*Nhận giá trị từ TaskMPU gửi tới để set giá trị cho hàm setSpeed()*/
   xQueueReceive(Queue1,&motorspeed2,portMAX_DELAY);
+  Serial.println(motorspeed2);
   analogWrite(ENA, motorspeed2);
   analogWrite(ENB, motorspeed2);
 }
@@ -109,8 +116,10 @@ void setup()
   pinMode(ENB,OUTPUT);;
     
   Serial.begin(9600);
+  mySerial.begin(9600);
   Wire.begin();
   mpu6050.begin();
+  /*Đo offset ban đầu*/
   mpu6050.calcGyroOffsets(true);
 
   Queue = xQueueCreate(1, sizeof(int));
@@ -155,13 +164,12 @@ void TaskZone(void *pvParameters )
       count ++;
       Serial.print("count: ");Serial.println(count);
       Serial.print("sensorValue: ");Serial.println(sensorValue);
-
       vTaskDelay(20);// chờ cho xe đi qua zone thì mới kiểm tra tiếp       
     }
     if (sensorValue < 200)
     {
       digitalWrite(3,HIGH);
-      Serial.println("nothing happened");
+      Serial.println("chưa đi qua zone");
       vTaskDelay(20);
     }
     if (count ==3)
@@ -182,7 +190,7 @@ void TaskZone(void *pvParameters )
 void TaskMPU(void *pvParameters ) 
 {
   int state = 1;
-  int pwm2, pwm;
+  int pwm2, pwm = 40;
   for(;;)
   {
     mpu6050.update();
@@ -192,16 +200,14 @@ void TaskMPU(void *pvParameters )
       z = mpu6050.getAngleZ(); //state 2 , vd : z=10;
       if(state == 1)
       {
+        /*Lấy giá trị z0 làm giá trị gốc*/
         z0 = z;
         state ++;
       }
-    //Serial.print("z=");
-    //Serial.println(z);
-    //Serial.print("\pwm2=");
-    //Serial.println(pwm2);
+
     if ((z - z0) > 0.1 || (z - z0) < 0.1)
     {
-      /*Bộ điều khiển P*/
+      /*Bộ điều khiển P lấy giá trị đầu vào là sai lệch giữa z0 và z*/
       pwm2 = pwm2 + Kp*(float)(z-z0);
 
       if(pwm2 > (pwm+4)) pwm2 = (pwm+4);
@@ -212,14 +218,20 @@ void TaskMPU(void *pvParameters )
     {
       pwm2 = pwm;
     }
+    Serial.print("z=");
+    Serial.println(z);
+    Serial.print("pwm2=");
+    Serial.println(pwm2);
     xQueueSend (Queue1,&pwm2,portMAX_DELAY);
     timer = millis();
     }
   }
 }
 
+/*Vừa điều khiển lái xe, vừa nhận tín hiệu từ ESP*/
 void TaskDrive  (void *pvParameters ) 
 {
+  String bienluu = ""; 
   uint32_t ulNotifiedValue;
   enum States{FORWARD,REVERSE,TURN,STOP};
   States state=FORWARD;
@@ -228,13 +240,14 @@ void TaskDrive  (void *pvParameters )
     switch(state) 
     {
       case FORWARD:  
-       while(mySerial.available () == 0)
+      /*Không có tín hiệu từ esp truyền sang thì bị lặp ở trong vòng lặp while này*/
+      while(mySerial.available () == 0)
       {
         Serial.println("Chờ cho đến khi được nhấn");
       }      
       forward();
-      setSpeed(70);
-        
+      setSpeed(40);
+      /*Chỉ khi Zone = 3 hoặc bằng 5 thì mới thoát lệnh đằng sau này và xe mới đi tiếp, ko thì cứ mãi đi thẳng*/
       xTaskNotifyWaitIndexed( 0,
                         ULONG_MAX, /* Clear all notification bits on entry. */
                         ULONG_MAX, /* Reset the notification value to 0 on exit. */
@@ -246,7 +259,7 @@ void TaskDrive  (void *pvParameters )
       if (read_count==3)
       { 
         Serial.println("count = 3, then this task is unblocked");
-        state=REVERSE;
+        state=TURN;
       }
       if (read_count ==5)
       {
@@ -256,22 +269,32 @@ void TaskDrive  (void *pvParameters )
       break;
         
                 
-      case REVERSE:
-      reverse();
-      setSpeed(70);
-      vTaskDelay(pdMS_TO_TICKS(1000));
-      state=TURN;      
-      break;
+      // case REVERSE:
+      // reverse();
+      // setSpeed(70);
+      // vTaskDelay(pdMS_TO_TICKS(1000));
+      // state=TURN;      
+      // break;
   
-        
-      case TURN:     
-      turnRight();
-      setSpeed(70);
+      /*Tương ứng với Zone = 3 thì rẽ trái hoặc phải*/  
+      case TURN:    
+      bienluu = mySerial.readString();
+
+      if (bienluu.startsWith("1"))
+      {
+        turnLeft();
+      }
+      if (bienluu.startsWith("2"))
+      {
+        turnRight();
+      }
+      setSpeed(40);
+      /*Căn thời gian cho nó xoay bao nhiêu độ*/
       vTaskDelay(pdMS_TO_TICKS(1000));
       state=FORWARD;      
       break; 
 
-        
+      /*Tương ứng với Zone = 5 thì dừng*/
       case STOP:
       _stop();
       setSpeed(0);  
