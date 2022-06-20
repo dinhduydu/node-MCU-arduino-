@@ -28,14 +28,14 @@ SoftwareSerial mySerial (6,7);
 #define ENB 9
 
 /*Gồm 3 Task: check Zone, Điều khiển xe và chạy thẳng dùng MPU*/
-void TaskZone(void *pvParameters);
+void TaskCheckZone(void *pvParameters);
 void TaskDrive(void *pvParameters);
 void TaskMPU(void *pvParameters);
 
-static TaskHandle_t TaskCheckHandle = NULL;// su dung bien cuc bo cho ca chuong trinh
+static TaskHandle_t TaskCheckZoneHandle = NULL;// su dung bien cuc bo cho ca chuong trinh
 static TaskHandle_t TaskDriveHandle = NULL;
 static TaskHandle_t TaskMPUHandle = NULL;
-QueueHandle_t  Queue,Queue1;
+QueueHandle_t  Queue,Queue1,Queue2;
 
 /*Sử dụng Queue để chứa giá trị đếm Zone*/
 int count =0;
@@ -124,16 +124,16 @@ void setup()
 
   Queue = xQueueCreate(1, sizeof(int));
   Queue1 = xQueueCreate(1, sizeof(int));
-  if(Queue!=NULL||Queue1!=NULL )
+  Queue2 = xQueueCreate(1, sizeof(int));
+  if(Queue!=NULL||Queue1!=NULL||Queue2!=NULL||Queue3!=NULL )
   {
-    
   xTaskCreate(
-        TaskZone
+        TaskCheckZone
         ,  "Zone"   
         ,  128 
         ,  NULL
         ,  0 
-        ,  &TaskCheckHandle);   
+        ,  &TaskCheckZoneHandle);   
 
   xTaskCreate(
         TaskDrive
@@ -154,7 +154,7 @@ void setup()
   vTaskStartScheduler(); 
 }
 
-void TaskZone(void *pvParameters ) 
+void TaskCheckZone(void *pvParameters ) 
 {
   for(;;) 
   {
@@ -189,20 +189,21 @@ void TaskZone(void *pvParameters )
 
 void TaskMPU(void *pvParameters ) 
 {
-  int state = 1;
+  int turn =0;
+  int Zone3 =0;
+  int State = 1;
   int pwm2, pwm = 40;
   for(;;)
   {
     mpu6050.update();
-
     if(millis() - timer > 1000)
     {
       z = mpu6050.getAngleZ(); //state 2 , vd : z=10;
-      if(state == 1)
+      if(State == 1)
       {
         /*Lấy giá trị z0 làm giá trị gốc*/
         z0 = z;
-        state ++;
+        State ++;
       }
 
     if ((z - z0) > 0.1 || (z - z0) < 0.1)
@@ -218,6 +219,32 @@ void TaskMPU(void *pvParameters )
     {
       pwm2 = pwm;
     }
+    xQueueReceive(Queue,&Zone3,portMAX_DELAY);
+    xQueueReceive(Queue2,&turn,portMAX_DELAY);
+    if ((State ==2) & (Zone3 ==3))
+    {
+      if(turn == 1)
+      {
+        z0 = z;
+        while(z + 83 > z0)
+        { 
+          mpu6050.update();
+          z = mpu6050.getAngleZ(); //state 2 , vd : z=10;
+          Serial.println(z);
+        }
+        xTaskNotify(TaskDriveHandle,0,eNoAction);
+       }
+      else if(turn == 2)
+      {
+        z0 = z;
+        while(z - 83 < z0)
+        {
+          mpu6050.update();
+          z = mpu6050.getAngleZ();
+          Serial.println(z);
+        }
+        xTaskNotify(TaskDriveHandle,0,eNoAction);
+      }
     Serial.print("z=");
     Serial.println(z);
     Serial.print("pwm2=");
@@ -231,6 +258,7 @@ void TaskMPU(void *pvParameters )
 /*Vừa điều khiển lái xe, vừa nhận tín hiệu từ ESP*/
 void TaskDrive  (void *pvParameters ) 
 {
+  int turn_right = 1, turn_left = 2;
   String bienluu = ""; 
   uint32_t ulNotifiedValue;
   enum States{FORWARD,REVERSE,TURN,STOP};
@@ -261,7 +289,7 @@ void TaskDrive  (void *pvParameters )
         Serial.println("count = 3, then this task is unblocked");
         state=TURN;
       }
-      if (read_count ==5)
+      if (read_count >=5)
       {
         Serial.println("count = 5, then this task is unblocked");
         state = STOP;
@@ -283,14 +311,19 @@ void TaskDrive  (void *pvParameters )
       if (bienluu.startsWith("1"))
       {
         turnLeft();
+        xQueueSend (Queue2,&turn_left,portMAX_DELAY);
       }
       if (bienluu.startsWith("2"))
       {
         turnRight();
+        xQueueSend (Queue2,&turn_right,portMAX_DELAY);
       }
       setSpeed(40);
-      /*Căn thời gian cho nó xoay bao nhiêu độ*/
-      vTaskDelay(pdMS_TO_TICKS(1000));
+      xTaskNotifyWaitIndexed( 0,
+                        ULONG_MAX, /* Clear all notification bits on entry. */
+                        ULONG_MAX, /* Reset the notification value to 0 on exit. */
+                        &ulNotifiedValue,
+                        portMAX_DELAY);     
       state=FORWARD;      
       break; 
 
@@ -298,6 +331,7 @@ void TaskDrive  (void *pvParameters )
       case STOP:
       _stop();
       setSpeed(0);  
+//    exit();
     }
   }
 }
