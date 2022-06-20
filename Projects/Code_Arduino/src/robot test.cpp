@@ -9,7 +9,6 @@
 #include <MPU6050_tockn.h>
 #include <Wire.h>
 MPU6050 mpu6050(Wire);
-long timer = 0;
 float z0,z =0 ;
 
 /*Sử dụng bộ P*/
@@ -67,15 +66,15 @@ void forward(){
   digitalWrite(IN4,LOW);
 }
 
-void reverse(){
-  _start();// Cho phép xe chạy
+// void reverse(){
+//   _start();// Cho phép xe chạy
 
-  // set up chiều của xe
-  digitalWrite(IN1,HIGH);
-  digitalWrite(IN2,LOW);
-  digitalWrite(IN3,LOW);
-  digitalWrite(IN4,HIGH);
-}
+//   // set up chiều của xe
+//   digitalWrite(IN1,HIGH);
+//   digitalWrite(IN2,LOW);
+//   digitalWrite(IN3,LOW);
+//   digitalWrite(IN4,HIGH);
+// }
 
 void turnRight(){
   _start();// Cho phép xe chạy
@@ -196,15 +195,14 @@ void TaskMPU(void *pvParameters )
   for(;;)
   {
     mpu6050.update();
-    if(millis() - timer > 1000)
+
+    z = mpu6050.getAngleZ(); //state 2 , vd : z=10;
+    if(State == 1)
     {
-      z = mpu6050.getAngleZ(); //state 2 , vd : z=10;
-      if(State == 1)
-      {
         /*Lấy giá trị z0 làm giá trị gốc*/
         z0 = z;
         State ++;
-      }
+    }
 
     if ((z - z0) > 0.1 || (z - z0) < 0.1)
     {
@@ -219,6 +217,12 @@ void TaskMPU(void *pvParameters )
     {
       pwm2 = pwm;
     }
+    xQueueSend (Queue1,&pwm2,portMAX_DELAY);
+    Serial.print("z=");
+    Serial.println(z);
+    Serial.print("pwm2=");
+    Serial.println(pwm2);
+    
     xQueueReceive(Queue,&Zone3,portMAX_DELAY);
     xQueueReceive(Queue2,&turn,portMAX_DELAY);
     if ((State ==2) & (Zone3 ==3))
@@ -245,13 +249,6 @@ void TaskMPU(void *pvParameters )
         }
         xTaskNotify(TaskDriveHandle,0,eNoAction);
       }
-    Serial.print("z=");
-    Serial.println(z);
-    Serial.print("pwm2=");
-    Serial.println(pwm2);
-    xQueueSend (Queue1,&pwm2,portMAX_DELAY);
-    timer = millis();
-    }
   }
 }
 
