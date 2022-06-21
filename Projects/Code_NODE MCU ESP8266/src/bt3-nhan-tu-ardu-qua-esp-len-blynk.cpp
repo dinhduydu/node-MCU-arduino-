@@ -1,77 +1,53 @@
-/*************************************************************
-
-  You can use this sketch as a debug tool that prints all incoming values
-  sent by a widget connected to a Virtual Pin 1 in the Blynk App.
-
-  App project setup:
-    Slider widget (0...100) on V1
- *************************************************************/
-
-// Template ID, Device Name and Auth Token are provided by the Blynk.Cloud
-// See the Device Info tab, or Template settings
 #define BLYNK_TEMPLATE_ID "TMPLjw14UP6r"
 #define BLYNK_DEVICE_NAME "autonomous vehicle monitoring on blynk"
 #define BLYNK_AUTH_TOKEN "YNKiHmPxWv2UIMysAf898THdUaBiJog8"
 
-// Comment this out to disable prints and save space
 #define BLYNK_PRINT Serial
-
-
 #include <ESP8266WiFi.h>
 #include <BlynkSimpleEsp8266.h>
 
-char auth[] = BLYNK_AUTH_TOKEN;
+#include <SoftwareSerial.h>
+SoftwareSerial s(D3, D4);
 
-// Your WiFi credentials.
-// Set password to "" for open networks.
+char auth[] = BLYNK_AUTH_TOKEN;
 char ssid[] = "Xom Tro 2";
 char pass[] = "Thao270296";
 
-// This function will be called every time Slider Widget
-// in Blynk app writes values to the Virtual Pin 1
-int  count,zone =0;
+int  point,zone = 0;
+
 BlynkTimer timer;
 BLYNK_WRITE(V0)
 {
-    int pinValueA = param.asInt(); // assigning incoming value from pin V0 to a variable
-    // You can also use:
-    // String i = param.asStr();
-    // double d = param.asDouble();
+    int pinValueA = param.asInt(); 
+    
     if (pinValueA == 1)
     {
-        digitalWrite(D2,HIGH);
-        Serial.println(1);
-        delay(500);
+        s.write(pinValueA);
+        Serial.print(pinValueA);
     }
     else
     {
-        digitalWrite(D2,LOW);
-        Serial.println(0);
-        delay(500);
-        
+        s.write(pinValueA);
+        Serial.print(pinValueA);
     }
 }
 
 
 BLYNK_WRITE(V1)
 {
-    int pinValueB = param.asInt(); // assigning incoming value from pin V1 to a variable
-    // You can also use:
-    // String i = param.asStr();
-    // double d = param.asDouble();
+    int pinValueB = param.asInt(); 
     if (pinValueB == 1)
     {
-        digitalWrite(D3,HIGH);
-        Serial.println(2);
-        delay(500);
+        s.write(pinValueB+1);
+        Serial.print(pinValueB+1);
     }
     else
     {
-        digitalWrite(D3,LOW);
-        Serial.println(0);
-        delay(500);
+        s.write(pinValueB);
+        Serial.print(pinValueB);
     }  
 }
+
 
 BLYNK_CONNECTED()
 {
@@ -81,48 +57,36 @@ BLYNK_CONNECTED()
     Blynk.syncVirtual(V3);
 }
 
+/*send zone to cloud*/
 void myTimerEvent()
 {
-     
-  // You can send any value at any time.
-  // Please don't send more that 10 values per second.
-  Blynk.virtualWrite(V2, count);
-  Blynk.virtualWrite(V3, zone);
+    Blynk.virtualWrite(V2, zone);
+    Blynk.virtualWrite(V3, point);
+    // Blynk.virtualWrite(V4, )
 }
 
 
 
 void setup()
 {
-    pinMode(D0,INPUT);
-    pinMode(D2,OUTPUT);
-    pinMode(D3,OUTPUT);
-  // Debug console
-  Serial.begin(9600);
+    // pinMode(D5, INPUT);
+    // pinMode(D6, OUTPUT);
+    s.begin(115200);
+    Serial.begin(9600);
 
-  Blynk.begin(auth, ssid, pass);
-  // You can also specify server:
-  //Blynk.begin(auth, ssid, pass, "blynk.cloud", 80);
-  //Blynk.begin(auth, ssid, pass, IPAddress(192,168,1,100), 8080);
-
-  timer.setInterval(1000L, myTimerEvent);
+    Blynk.begin(auth, ssid, pass);
+    timer.setInterval(10L, myTimerEvent);
 }
 
 void loop()
 {
-    int i = analogRead(D0);
-    if (i > 800)
+    while(s.available()==0)
     {
-        count++;
-        zone = zone+20;
-    }
-    
-    if (count > 5 || zone >100)
-    {
-        count =0;
-        zone =0;
+        Blynk.run();
+        timer.run();
     }
 
-    Blynk.run();
-    timer.run();
+    zone = s.read();
+    point = zone*20;
+    Serial.println(zone);
 }
