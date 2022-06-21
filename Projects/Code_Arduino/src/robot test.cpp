@@ -124,7 +124,7 @@ void setup()
   Queue = xQueueCreate(1, sizeof(int));
   Queue1 = xQueueCreate(1, sizeof(int));
   Queue2 = xQueueCreate(1, sizeof(int));
-  if(Queue!=NULL||Queue1!=NULL||Queue2!=NULL||Queue3!=NULL )
+  if(Queue!=NULL||Queue1!=NULL||Queue2!=NULL)
   {
   xTaskCreate(
         TaskCheckZone
