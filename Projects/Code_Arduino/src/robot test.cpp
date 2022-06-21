@@ -12,11 +12,11 @@ MPU6050 mpu6050(Wire);
 float z0,z =0 ;
 
 /*Sử dụng bộ P*/
-float Kp = 1;
+float Kp = 20;
 
 /*Sử dụng thư viện Software Serial*/
 #include <SoftwareSerial.h>
-SoftwareSerial mySerial (6,7);
+SoftwareSerial mySerial (4,5);
 
 /*Khai báo chân điều khiển L298 với ENA và ENB để băm xung*/
 #define ENA 11
@@ -34,6 +34,8 @@ void TaskMPU(void *pvParameters);
 static TaskHandle_t TaskCheckZoneHandle = NULL;// su dung bien cuc bo cho ca chuong trinh
 static TaskHandle_t TaskDriveHandle = NULL;
 static TaskHandle_t TaskMPUHandle = NULL;
+
+/* Declare a variable of type QueueHandle_t to hold the handle of the queue being created. */
 QueueHandle_t  Queue,Queue1,Queue2;
 
 /*Sử dụng Queue để chứa giá trị đếm Zone*/
@@ -96,12 +98,13 @@ void turnLeft(){
   digitalWrite(IN4,HIGH);
 }
 
-void setSpeed(int motorspeed2)
+void setSpeed()
 {
+  int motorspeed2;
   /*Nhận giá trị từ TaskMPU gửi tới để set giá trị cho hàm setSpeed()*/
   xQueueReceive(Queue1,&motorspeed2,portMAX_DELAY);
   Serial.println(motorspeed2);
-  analogWrite(ENA, motorspeed2);
+  analogWrite(ENA, 150);
   analogWrite(ENB, motorspeed2);
 }
 
@@ -121,6 +124,7 @@ void setup()
   /*Đo offset ban đầu*/
   mpu6050.calcGyroOffsets(true);
 
+  /* Create a queue that can hold a maximum of 1 pointers, in this case int pointers. */
   Queue = xQueueCreate(1, sizeof(int));
   Queue1 = xQueueCreate(1, sizeof(int));
   Queue2 = xQueueCreate(1, sizeof(int));
@@ -153,12 +157,14 @@ void setup()
   vTaskStartScheduler(); 
 }
 
+int presensorValue;
 void TaskCheckZone(void *pvParameters ) 
 {
   for(;;) 
   {
+    presensorValue = sensorValue;
     sensorValue = analogRead(A0);
-    if (sensorValue > 500)
+    if (sensorValue > 700 && presensorValue <= 700)
     {
       count ++;
       Serial.print("count: ");Serial.println(count);
@@ -191,7 +197,7 @@ void TaskMPU(void *pvParameters )
   int turn =0;
   int Zone3 =0;
   int State = 1;
-  int pwm2, pwm = 40;
+  int pwm2 = 150, pwm = 155;
   for(;;)
   {
     mpu6050.update();
@@ -252,11 +258,12 @@ void TaskMPU(void *pvParameters )
   }
 }
 
+int zone3 = 0;
 /*Vừa điều khiển lái xe, vừa nhận tín hiệu từ ESP*/
 void TaskDrive  (void *pvParameters ) 
 {
   int turn_right = 1, turn_left = 2;
-  String bienluu = ""; 
+  int bienluu = 0; 
   uint32_t ulNotifiedValue;
   enum States{FORWARD,REVERSE,TURN,STOP};
   States state=FORWARD;
@@ -271,20 +278,16 @@ void TaskDrive  (void *pvParameters )
         Serial.println("Chờ cho đến khi được nhấn");
       }      
       forward();
-      setSpeed(40);
-      /*Chỉ khi Zone = 3 hoặc bằng 5 thì mới thoát lệnh đằng sau này và xe mới đi tiếp, ko thì cứ mãi đi thẳng*/
-      xTaskNotifyWaitIndexed( 0,
-                        ULONG_MAX, /* Clear all notification bits on entry. */
-                        ULONG_MAX, /* Reset the notification value to 0 on exit. */
-                        &ulNotifiedValue,
-                        portMAX_DELAY);
+      setSpeed();
 
       xQueueReceive(Queue,&read_count,portMAX_DELAY);
       Serial.print("the varialable named count was sent by TaskZone (3 or 5) is: ");Serial.println(read_count);
-      if (read_count==3)
+      
+      if (read_count==3 && zone3 == 0)
       { 
         Serial.println("count = 3, then this task is unblocked");
         state=TURN;
+        zone3++;
       }
       if (read_count >=5)
       {
@@ -292,50 +295,38 @@ void TaskDrive  (void *pvParameters )
         state = STOP;
       }
       break;
-        
-                
-      // case REVERSE:
-      // reverse();
-      // setSpeed(70);
-      // vTaskDelay(pdMS_TO_TICKS(1000));
-      // state=TURN;      
-      // break;
   
       /*Tương ứng với Zone = 3 thì rẽ trái hoặc phải*/  
       case TURN:    
-      bienluu = mySerial.readString();
+      bienluu = mySerial.read();
 
-      if (bienluu.startsWith("1"))
+      if (bienluu == 2)
       {
         turnLeft();
+        /*send turn_left*/
         xQueueSend (Queue2,&turn_left,portMAX_DELAY);
       }
-      if (bienluu.startsWith("2"))
+      if (bienluu == 1)
       {
         turnRight();
         xQueueSend (Queue2,&turn_right,portMAX_DELAY);
       }
-      setSpeed(40);
+      setSpeed();
+      state=FORWARD; 
       xTaskNotifyWaitIndexed( 0,
                         ULONG_MAX, /* Clear all notification bits on entry. */
                         ULONG_MAX, /* Reset the notification value to 0 on exit. */
                         &ulNotifiedValue,
                         portMAX_DELAY);     
-      state=FORWARD;      
+           
       break; 
 
       /*Tương ứng với Zone = 5 thì dừng*/
       case STOP:
-      _stop();
-      setSpeed(0);  
-//    exit();
+      _stop(); 
     }
   }
 }
-
-
-
-
 
 
 void loop() 
