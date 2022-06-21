@@ -257,10 +257,11 @@ void TaskMPU(void *pvParameters )
       }
   }
 }
+}
 
 int zone3 = 0;
 /*Vừa điều khiển lái xe, vừa nhận tín hiệu từ ESP*/
-void TaskDrive  (void *pvParameters ) 
+void TaskDrive  (void *pvParameters )
 {
   int turn_right = 1, turn_left = 2;
   int bienluu = 0; 
