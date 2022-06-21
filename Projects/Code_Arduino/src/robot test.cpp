@@ -131,7 +131,7 @@ void setup()
         ,  "Zone"   
         ,  128 
         ,  NULL
-        ,  0 
+        ,  1 
         ,  &TaskCheckZoneHandle);   
 
   xTaskCreate(
@@ -139,7 +139,7 @@ void setup()
         ,  "Drive" 
         ,  128  
         ,  NULL
-        ,  0  
+        ,  1  
         ,  &TaskDriveHandle);  
 
   xTaskCreate(
@@ -147,7 +147,7 @@ void setup()
         ,  "MPU"   
         ,  128 
         ,  NULL
-        ,  0 
+        ,  1 
         ,  &TaskMPUHandle);    
   }
   vTaskStartScheduler(); 
