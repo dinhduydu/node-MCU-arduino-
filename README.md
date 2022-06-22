@@ -1,3 +1,4 @@
 # node-MCU-arduino-
 
-Gồm 1 code cho Arduino và 1 code cho ESP8266
+Video demo:
+https://www.youtube.com/shorts/mKGIP6hsVGs
