@@ -169,6 +169,7 @@ void TaskCheckZone(void *pvParameters )
       count ++;
       Serial.print("count: ");Serial.println(count);
       Serial.print("sensorValue: ");Serial.println(sensorValue);
+      mySerial.write(count);
       vTaskDelay(20);// chờ cho xe đi qua zone thì mới kiểm tra tiếp       
     }
     if (sensorValue < 200)
